@@ -1,6 +1,6 @@
 # Deep Active Inference @ IWAI2023
 
-This is code used for the Deep Active Inference tutorial at IWAI 2023 and is adapted from [Original Code][https://github.com/zfountas/deep-active-inference-mc]
+This is code used for the Deep Active Inference tutorial at IWAI 2023 and is adapted from [Original Code](https://github.com/zfountas/deep-active-inference-mc)
 
 ### Requirements
 * Programming language: Python 3
