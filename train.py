@@ -2,6 +2,7 @@ import os, time, numpy as np, argparse, matplotlib.pyplot as plt, scipy
 from sys import argv
 from distutils.dir_util import copy_tree
 import tensorflow as tf
+from tqdm import tqdm
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
@@ -31,7 +32,7 @@ s_dim = 10;          pi_dim = 4;            beta_s = 1.0;        beta_o = 1.0;
 gamma = 0.0;         gamma_rate = 0.01;     gamma_max = 0.8;     gamma_delay = 30
 deepness = 1;        samples = 1;           repeats = 5
 l_rate_top = 1e-04;  l_rate_mid = 1e-04;    l_rate_down = 0.001
-ROUNDS = 1000;       TEST_SIZE = 1000;      epochs = 1000
+ROUNDS = 2;       TEST_SIZE = 1000;      epochs = 2
 
 signature = 'final_model_'
 signature += str(gamma_rate)+'_'+str(gamma_delay)+'_'+str(var_a)+'_'+str(args.batch)+'_'+str(s_dim)+'_'+str(repeats)
@@ -74,7 +75,7 @@ if optimizers == {}:
     optimizers['down'] = tf.keras.optimizers.Adam(learning_rate=l_rate_down)
 
 start_time = time.time()
-for epoch in range(start_epoch, epochs + 1):
+for epoch in tqdm(range(start_epoch, epochs + 1)):
     if epoch > gamma_delay and model.model_down.gamma < gamma_max:
             model.model_down.gamma.assign(model.model_down.gamma+gamma_rate)
 
@@ -139,10 +140,10 @@ for epoch in range(start_epoch, epochs + 1):
     stats['var_d'].append(var_d)
     stats['TC'].append(np.mean(total_correlation(qs1.numpy())))
     stats['learning_rate'].append(optimizers['down'].lr.numpy())
-    stats['current_lr'].append(optimizers['down']._decayed_lr(tf.float32).numpy())
+    import pdb; pdb.set_trace()
+    stats['current_lr'].append(optimizers['down'].lr(tf.float32).numpy())
 
-    generate_traversals(model=model, s_dim=s_dim, s_sample=s0, S_real=S0_real,
-                        filenames=[folder+'/traversals_at_epoch_{:04d}.png'.format(epoch)], colour=False)
+    generate_traversals(model=model, s_dim=s_dim, s_sample=s0, S_real=S0_real, filenames=[folder+'/traversals_at_epoch_{:04d}.png'.format(epoch)], colour=False)
     reconstructions_plot(o0, o1, po1.numpy(), filename=folder+'/imagination_'+signature+'_'+str(epoch)+'.png', colour=False)
 
     # Test how well the agent learnt the dynamics related to the reward..

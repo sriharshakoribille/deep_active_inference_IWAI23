@@ -181,22 +181,19 @@ class ActiveInferenceModel:
 
     def save_all(self, folder_chp, stats, script_file="", optimizers={}):
         self.save_weights(folder_chp)
-        with open(folder_chp+'/stats.pkl','wb') as ff:
-            pickle.dump(stats,ff)
-        with open(folder_chp+'/optimizers.pkl','wb') as ff:
-            pickle.dump(optimizers,ff)
+        with open(folder_chp+'/stats.pkl','wb') as ff:  pickle.dump(stats,ff)
+        checkpoint = tf.train.Checkpoint(optim=optimizers)
+        checkpoint.save(folder_chp)
         copyfile('src/tfmodel.py', folder_chp+'/tfmodel.py')
         copyfile('src/tfloss.py', folder_chp+'/tfloss.py')
-        if script_file != "":
-            copyfile(script_file, folder_chp+'/'+script_file)
-
+        
     def load_all(self, folder_chp):
         self.load_weights(folder_chp)
         with open(folder_chp+'/stats.pkl','rb') as ff:
             stats = pickle.load(ff)
         try:
-            with open(folder_chp+'/optimizers.pkl','rb') as ff:
-                optimizers = pickle.load(ff)
+          checkpoint = tf.train.Checkpoint()
+          checkpoint.restore(tf.train.latest_checkpoint(folder_chp))
         except:
             optimizers = {}
         if len(stats['var_beta_s'])>0: self.model_down.beta_s.assign(stats['var_beta_s'][-1])
