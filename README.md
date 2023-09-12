@@ -1,6 +1,6 @@
 # Deep Active Inference @ IWAI2023
 
-This is code used for the Deep Active Inference tutorial at IWAI 2023 and is adapted from [Original Code](https://github.com/zfountas/deep-active-inference-mc)
+This is code used for the Deep Active Inference tutorial at IWAI 2023 and is adapted from [deep active inference code base](https://github.com/zfountas/deep-active-inference-mc)
 
 ### Requirements
 * Programming language: Python 3
@@ -14,27 +14,13 @@ This is code used for the Deep Active Inference tutorial at IWAI 2023 and is ada
 python train.py
 ```
 
-This script will automatically generate checkpoints with the optimized parameters of the agent and store this checkpoints to a different sub-folder every 25 training iterations. The default folder that will contain all sub-folders is ```figs_final_model_0.01_30_1.0_50_10_5```. The script will also generate a number of performance figures, also stored in the same folder. You can stop the process at any point by pressing ```Ctr+c```.
-
 ##### Testing
 * Finally, once training has been completed, the performance of the newly-trained agent can be demonstrated in real-time by typing
 ```bash
 python test_demo.py -n figs_final_model_0.01_30_1.0_50_10_5/checkpoints/ -m
 ```
-This command will open a graphical interface which can be controlled by a number of keyboard shortcuts. In particular, press:
 
-  * `q` or `esc` to exit the simulation at any point.
-  * `1` to enable the MCTS-based full-scale active inference agent (enable by default).
-  * `2` to enable the active inference agent that minimizes expected free energy calculated only for a single time-step into the future.
-  * `3` to make the agent being controlled entirely by the habitual network (see manuscript for explanation)
-  * `4` to activate *manual mode* where the agents are disabled and the environment can be manipulated by the user. Use the keys `w`, `s`, `a` or `d` to move the current object up, down, left or right respectively.
-  * `5` to enable an agent that minimizes the terms `a` and `b` of equation 8 in the manuscript.
-  * `6` to enable an agent that minimizes only the term `a` of the same equation (reward-seeking agent).
-  * `m` to toggle the use of sampling in calculating future transitions.
-
-
-
-  ### Bibtex
+### Bibtex
   ```
 @inproceedings{fountas2020daimc,
  author = {Fountas, Zafeirios and Sajid, Noor and Mediano, Pedro and Friston, Karl},
