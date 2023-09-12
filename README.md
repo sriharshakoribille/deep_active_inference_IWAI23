@@ -1,23 +1,11 @@
 # Deep Active Inference @ IWAI2023
 
-This is code used for the Deep Active Inference tutorial at IWAI 2023 and is adapted from https://github.com/zfountas/deep-active-inference-mc
-
-
-This source code release accompanies the manuscript:
-
-Z. Fountas, N. Sajid, P. A.M. Mediano and K. Friston "[Deep active inference agents using Monte-Carlo methods](https://papers.nips.cc/paper/2020/hash/865dfbde8a344b44095495f3591f7407-Abstract.html)",	Advances in Neural Information Processing Systems 33 (NeurIPS 2020).
-
-If you use this model or the dynamic dSprites environment in your work, please cite our paper.
-
----
-
+This is code used for the Deep Active Inference tutorial at IWAI 2023 and is adapted from [Original Code][https://github.com/zfountas/deep-active-inference-mc]
 
 ### Requirements
 * Programming language: Python 3
 * Libraries: tensorflow >= 2.0.0, numpy, matplotlib, scipy, opencv-python
 * [dSprites dataset](https://github.com/deepmind/dsprites-dataset/raw/master/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz).
-
-### Instructions
 
 
 ##### Training
@@ -25,6 +13,7 @@ If you use this model or the dynamic dSprites environment in your work, please c
 ```bash
 python train.py
 ```
+
 This script will automatically generate checkpoints with the optimized parameters of the agent and store this checkpoints to a different sub-folder every 25 training iterations. The default folder that will contain all sub-folders is ```figs_final_model_0.01_30_1.0_50_10_5```. The script will also generate a number of performance figures, also stored in the same folder. You can stop the process at any point by pressing ```Ctr+c```.
 
 ##### Testing
@@ -42,6 +31,7 @@ This command will open a graphical interface which can be controlled by a number
   * `5` to enable an agent that minimizes the terms `a` and `b` of equation 8 in the manuscript.
   * `6` to enable an agent that minimizes only the term `a` of the same equation (reward-seeking agent).
   * `m` to toggle the use of sampling in calculating future transitions.
+
 
 
   ### Bibtex
