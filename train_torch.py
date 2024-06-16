@@ -1,20 +1,24 @@
-import os, time, numpy as np, argparse, matplotlib.pyplot as plt, scipy
+import os
+import time
+import numpy as np
+import argparse
+import scipy
 from sys import argv
 from distutils.dir_util import copy_tree
-import tensorflow as tf
+import torch
 from tqdm import tqdm
-tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+from src_torch.game_environment_torch import Game
+from src_torch.torchmodel import ActiveInferenceModel
+from src_torch.torchutils import *
+from graphs.reconstructions_plot import reconstructions_plot
+from graphs.generate_traversals_torch import generate_traversals
+from graphs.stats_plot import stats_plot
+
+import matplotlib.pyplot as plt
 
 # Import custom libraries
-from src.game_environment import Game
-import src.util as u
-import src.tfloss as loss
-from src.tfmodel import ActiveInferenceModel
-from src.tfutils import *
-from graphs.reconstructions_plot import reconstructions_plot
-from graphs.generate_traversals import generate_traversals
-from graphs.stats_plot import stats_plot
+import src_torch.util_torch as u
+import src_torch.torchloss as loss
 
 parser = argparse.ArgumentParser(description='Training script.')
 parser.add_argument('-r', '--resume', action='store_true', help='If this is used, the script tries to load existing weights and resume training.')
@@ -27,22 +31,41 @@ b: This shows the average value of D_kl[pi] that will cause half sigmoid (i.e. d
 c: This moves the steepness of the sigmoid
 d: This is the minimum omega (when sigmoid is zero)
 '''
-var_a = 1.0;         var_b = 25.0;          var_c = 5.0;         var_d = 1.5
-s_dim = 10;          pi_dim = 4;            beta_s = 1.0;        beta_o = 1.0;
-gamma = 0.0;         gamma_rate = 0.01;     gamma_max = 0.8;     gamma_delay = 30
-deepness = 1;        samples = 1;           repeats = 5
-l_rate_top = 1e-04;  l_rate_mid = 1e-04;    l_rate_down = 0.001
-ROUNDS = 2;       TEST_SIZE = 1000;      epochs = 2
+var_a = 1.0
+var_b = 25.0
+var_c = 5.0
+var_d = 1.5
+s_dim = 10
+pi_dim = 4
+beta_s = 1.0
+beta_o = 1.0
+gamma = 0.0
+gamma_rate = 0.01
+gamma_max = 0.8
+gamma_delay = 30
+deepness = 1
+samples = 1
+repeats = 5
+l_rate_top = 1e-04
+l_rate_mid = 1e-04
+l_rate_down = 0.001
+ROUNDS = 2
+TEST_SIZE = 1000
+epochs = 2
 
 signature = 'final_model_'
 signature += str(gamma_rate)+'_'+str(gamma_delay)+'_'+str(var_a)+'_'+str(args.batch)+'_'+str(s_dim)+'_'+str(repeats)
 folder = 'figs_'+signature
 folder_chp = folder + '/checkpoints'
 
-try: os.mkdir(folder)
-except: print('Folder already exists!!')
-try: os.mkdir(folder_chp)
-except: print('Folder chp creation error')
+try:
+    os.mkdir(folder)
+except:
+    print('Folder already exists!!')
+try:
+    os.mkdir(folder_chp)
+except:
+    print('Folder chp creation error')
 
 games = Game(args.batch)
 game_test = Game(1)
@@ -70,14 +93,14 @@ else:
     optimizers = {}
 
 if optimizers == {}:
-    optimizers['top'] = tf.keras.optimizers.Adam(learning_rate=l_rate_top)
-    optimizers['mid'] = tf.keras.optimizers.Adam(learning_rate=l_rate_mid)
-    optimizers['down'] = tf.keras.optimizers.Adam(learning_rate=l_rate_down)
+    optimizers['top'] = torch.optim.Adam(model.model_top.parameters(), lr=l_rate_top)
+    optimizers['mid'] = torch.optim.Adam(model.model_mid.parameters(), lr=l_rate_mid)
+    optimizers['down'] = torch.optim.Adam(model.model_down.parameters(), lr=l_rate_down)
 
 start_time = time.time()
 for epoch in tqdm(range(start_epoch, epochs + 1)):
     if epoch > gamma_delay and model.model_down.gamma < gamma_max:
-            model.model_down.gamma.assign(model.model_down.gamma+gamma_rate)
+            model.model_down.gamma += gamma_rate
 
     train_scores = np.zeros(ROUNDS)
     for i in range(ROUNDS):
@@ -88,7 +111,7 @@ for epoch in tqdm(range(start_epoch, epochs + 1)):
         # -- TRAIN TOP LAYER ---------------------------------------------------
         qs0,_,_ = model.model_down.encoder_with_sample(o0)
         D_KL_pi = loss.train_model_top(model_top=model.model_top, s=qs0, log_Ppi=log_Ppi, optimizer=optimizers['top'])
-        D_KL_pi = D_KL_pi.numpy()
+        D_KL_pi = D_KL_pi.detach().numpy()
 
         current_omega = loss.compute_omega(D_KL_pi, a=var_a, b=var_b, c=var_c, d=var_d).reshape(-1,1)
 
@@ -131,26 +154,25 @@ for epoch in tqdm(range(start_epoch, epochs + 1)):
     stats['kl_div_pi_med'].append(np.median(kl_div_pi))
     stats['kl_div_pi_std'].append(np.std(kl_div_pi))
     stats['kl_div_pi_anal'].append(np.mean(kl_div_pi_anal,axis=0))
-    stats['var_beta_s'].append(model.model_down.beta_s.numpy())
-    stats['var_gamma'].append(model.model_down.gamma.numpy())
-    stats['var_beta_o'].append(model.model_down.beta_o.numpy())
+    stats['var_beta_s'].append(model.model_down.beta_s.item())
+    stats['var_gamma'].append(model.model_down.gamma.item())
+    stats['var_beta_o'].append(model.model_down.beta_o.item())
     stats['var_a'].append(var_a)
     stats['var_b'].append(var_b)
     stats['var_c'].append(var_c)
     stats['var_d'].append(var_d)
-    stats['TC'].append(np.mean(total_correlation(qs1.numpy())))
-    stats['learning_rate'].append(optimizers['down'].lr.numpy())
-    import pdb; pdb.set_trace()
-    stats['current_lr'].append(optimizers['down'].lr(tf.float32).numpy())
+    stats['TC'].append(np.mean(total_correlation(qs1.detach().numpy())))
+    stats['learning_rate'].append(optimizers['down'].param_groups[0]['lr'])
+    stats['current_lr'].append(optimizers['down'].param_groups[0]['lr'])
 
     generate_traversals(model=model, s_dim=s_dim, s_sample=s0, S_real=S0_real, filenames=[folder+'/traversals_at_epoch_{:04d}.png'.format(epoch)], colour=False)
-    reconstructions_plot(o0, o1, po1.numpy(), filename=folder+'/imagination_'+signature+'_'+str(epoch)+'.png', colour=False)
+    reconstructions_plot(o0, o1, po1.detach().numpy(), filename=folder+'/imagination_'+signature+'_'+str(epoch)+'.png', colour=False)
 
     # Test how well the agent learnt the dynamics related to the reward..
     o0,o1,pi0 = u.make_batch_dsprites_random_reward_transitions(game=game_test, index=0, size=TEST_SIZE, repeats=repeats)
     po1 = model.imagine_future_from_o(o0, pi0)
-    reconstructions_plot(o0, o1, po1.numpy(), filename=folder+'/reward_imagination_'+signature+'_'+str(epoch)+'.png')
-    mse_reward = u.compare_reward(o1=o1,po1=po1.numpy())
+    reconstructions_plot(o0, o1, po1.detach().numpy(), filename=folder+'/reward_imagination_'+signature+'_'+str(epoch)+'.png')
+    mse_reward = u.compare_reward(o1=o1,po1=po1.detach().numpy())
     stats['mse_r'].append(mse_reward)
     stats_plot(stats, folder+'/1_result_'+signature)
 
@@ -158,18 +180,3 @@ for epoch in tqdm(range(start_epoch, epochs + 1)):
           stats['F'][-1], stats['mse_o'][-1], stats['kl_div_s'][-1], stats['omega'][-1], stats['omega_std'][-1], stats['kl_div_pi'][-1],
           stats['TC'][-1], round(time.time()-start_time,2)))
     start_time = time.time()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#
