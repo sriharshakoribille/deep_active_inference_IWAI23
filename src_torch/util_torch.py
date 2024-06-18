@@ -1,5 +1,6 @@
 import numpy as np
 import pickle
+import torch
 
 np_precision = np.float32
 
@@ -22,7 +23,9 @@ def make_batch_dsprites_random(game, index, size, repeats):
         o1[i] = game.current_frame(index)
         S1_real[i] = game.current_s[index,1:]
         S1_real[i,5] = game.last_r[index]
-    return o0, o1, pi_one_hot, S0_real, S1_real
+    return torch.Tensor(o0).permute(0,3,1,2),\
+          torch.Tensor(o1).permute(0,3,1,2), \
+            torch.Tensor(pi_one_hot), S0_real, S1_real
 
 def make_batch_dsprites_random_reward_transitions(game, index, size, deepness=1, repeats=1):
     '''
@@ -45,29 +48,31 @@ def make_batch_dsprites_random_reward_transitions(game, index, size, deepness=1,
 
 def softmax_multi_with_log(x, single_values=4, eps=1e-20, temperature=10.0):
     """Compute softmax values for each sets of scores in x."""
-    x = x.reshape(-1, single_values)
-    x = x - np.max(x,1).reshape(-1,1) # Normalization
-    e_x = np.exp(x/temperature)
+    x= x.reshape(-1, single_values)
+    x = x - torch.max(x,1)[0].reshape(-1,1) # Normalization
+    e_x = torch.exp(x/temperature)
     SM = e_x / e_x.sum(axis=1).reshape(-1,1)
-    logSM = x - np.log(e_x.sum(axis=1).reshape(-1,1) + eps) # to avoid infs
+    logSM = x - torch.log(e_x.sum(axis=1).reshape(-1,1) + eps) # to avoid infs
     return SM, logSM
 
 def make_batch_dsprites_active_inference(games, model, deepness=10, samples=5, calc_mean=False, repeats=1):
     o0 = games.current_frame_all()
-    o0_repeated = o0.repeat(4,0) # The 0th dimension
+    o0_repeated = torch.Tensor(o0.repeat(4,0)) # The 0th dimension
+    o0 = torch.Tensor(o0).permute(0,3,1,2)
+    o0_repeated = o0_repeated.permute(0,3,1,2)
 
-    pi_one_hot = np.array([[1.0,0.0,0.0,0.0], [0.0,1.0,0.0,0.0], [0.0,0.0,1.0,0.0], [0.0,0.0,0.0,1.0]], dtype=np_precision)
-    pi_repeated = np.tile(pi_one_hot,(games.games_no, 1))
+    pi_one_hot = torch.eye(4)
+    pi_repeated = torch.tile(pi_one_hot,(games.games_no, 1))
 
-    sum_G, sum_terms, po2 = model.calculate_G_repeated(o0_repeated, pi_repeated, steps=deepness, samples=samples, calc_mean=calc_mean)
+    sum_G, sum_terms, po2 = model.calculate_G_repeated(o0_repeated, torch.Tensor(pi_repeated), steps=deepness, samples=samples, calc_mean=calc_mean)
     terms1 = -sum_terms[0]
     terms12 = -sum_terms[0]+sum_terms[1]
     # Shape now is (games_no,4)
     #Ppi, log_Ppi = softmax_multi_with_log(-terms1.numpy(), 4) # For agent driven just by reward
     #Ppi, log_Ppi = softmax_multi_with_log(-terms12.numpy(), 4) # For agent driven by terms 1 and 2
-    Ppi, log_Ppi = softmax_multi_with_log(-sum_G.numpy(), 4) # Full active inference agent
+    Ppi, log_Ppi = softmax_multi_with_log(-sum_G, 4) # Full active inference agent
 
-    pi_choices = np.array([np.random.choice(4,p=Ppi[i]) for i in range(games.games_no)])
+    pi_choices = np.array([np.random.choice(4,p=Ppi[i].detach().numpy()) for i in range(games.games_no)])
 
     # One hot version..
     pi0 = np.zeros((games.games_no,4), dtype=np_precision)
@@ -77,7 +82,7 @@ def make_batch_dsprites_active_inference(games, model, deepness=10, samples=5, c
     for i in range(games.games_no): games.pi_to_action(pi_choices[i], i, repeats=repeats)
     o1 = games.current_frame_all()
 
-    return o0, o1, pi0, log_Ppi
+    return o0, torch.Tensor(o1).permute(0,3,1,2), torch.Tensor(pi0), log_Ppi
 
 def compare_reward(o1, po1):
     ''' Using MSE. '''
