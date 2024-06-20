@@ -1,13 +1,12 @@
+import matplotlib.pyplot as plt
 from matplotlib import gridspec
 import numpy as np
 import torch
 from scipy.stats import pearsonr, spearmanr, pointbiserialr
 from sklearn.feature_selection import mutual_info_regression
 
-import matplotlib.pyplot as plt
-import torch.nn.functional as F
-
-def generate_traversals(model, s_dim, s_sample, S_real, filenames=[], naive=False, colour=False):
+def generate_traversals(model, s_dim, s_sample, S_real, filenames=[], naive=False, colour=False,
+                        device='cpu'):
     elements = 10
 
     fig = plt.figure(figsize=(8,10))
@@ -29,10 +28,10 @@ def generate_traversals(model, s_dim, s_sample, S_real, filenames=[], naive=Fals
             start_val[s_indx] = (hh[1][0]+hh[1][1])/2.0
             end_val[s_indx] = (hh[1][-2]+hh[1][-1])/2.0
 
-    start_val = torch.tensor([-5.0, -5.0, -2.0, -5.0, -1.3, -0.65, -2.0,  -2.5,  0.4, -2.5])
-    arg_max_hist_value = torch.tensor([-1.5,0.0,-1.5,0.0,1.0,0.0,0.0,0.0,0.0,0.0])
-    #arg_max_hist_value = torch.tensor([-1.5,0.0,-1.5,0.0,0.75,1.0,0.0,0.0,0.75,0.0]) # for s8
-    end_val = torch.tensor([4.0, 5.0, 2.0, 5.0, 4.75, 2.1, 2.0, 2.5, 3.45, 2.5])
+    start_val = np.array([-5.0, -5.0, -2.0, -5.0, -1.3, -0.65, -2.0,  -2.5,  0.4, -2.5])
+    arg_max_hist_value = np.array([-1.5,0.0,-1.5,0.0,1.0,0.0,0.0,0.0,0.0,0.0])
+    #arg_max_hist_value = np.array([-1.5,0.0,-1.5,0.0,0.75,1.0,0.0,0.0,0.75,0.0]) # for s8
+    end_val = np.array([4.0, 5.0, 2.0, 5.0, 4.75, 2.1, 2.0, 2.5, 3.45, 2.5])
 
     if len(S_real) > 0:
         correlations = np.zeros((10,6))
@@ -43,7 +42,7 @@ def generate_traversals(model, s_dim, s_sample, S_real, filenames=[], naive=Fals
             for s_indx in range(s_dim):
                 correlations[s_indx,real_s_indx],correlations_p[s_indx,real_s_indx] = spearmanr(s_sample[:,s_indx],S_real[:,real_s_indx])
                 correlations[s_indx,real_s_indx] = abs(correlations[s_indx,real_s_indx])
-                correlations_cat[s_indx,real_s_indx] = mutual_info_regression(s_sample[:,s_indx].numpy().reshape(-1,1),S_real[:,real_s_indx])
+                correlations_cat[s_indx,real_s_indx] = mutual_info_regression(s_sample[:,s_indx].reshape(-1,1),S_real[:,real_s_indx])
 
         for s_indx in range(s_dim):
             plt.subplot(gs[s_indx*3+2])
@@ -57,22 +56,23 @@ def generate_traversals(model, s_dim, s_sample, S_real, filenames=[], naive=Fals
     for s_indx in range(s_dim):
         plt.subplot(gs[s_indx*3])
         plt.ylabel(r'$s_{'+str(s_indx)+'}$')
-        s = torch.zeros((elements,s_dim))
+        s = np.zeros((elements,s_dim))
         for x in range(elements):
             for y in range(s_dim):
                 s[x,y] = arg_max_hist_value[y]
 
-        for x,s_x in enumerate(torch.linspace(start_val[s_indx],end_val[s_indx],elements)):
+        for x,s_x in enumerate(np.linspace(start_val[s_indx],end_val[s_indx],elements)):
             s[x,s_indx] = s_x
+        s = torch.Tensor(s).to(device)
         if colour:
             new_img = model.model_down.decoder(s)[:,:,:]
-            plt.imshow(np.hstack(new_img), vmin=0, vmax=1)
+            plt.imshow(np.hstack(new_img.detach().cpu().numpy()), vmin=0, vmax=1)
         else:
             new_img = model.model_down.decoder(s)[:,:,:,0]
-            plt.imshow(np.hstack(new_img), cmap='gray', vmin=0, vmax=1)
+            plt.imshow(np.hstack(new_img.detach().cpu().numpy()), cmap='gray', vmin=0, vmax=1)
         plt.xticks([])
         plt.yticks([])
-        plt.xlabel(str(round(start_val[s_indx].item(),4))+' <-- '+str(round(arg_max_hist_value[s_indx].item(),4))+' --> '+str(round(end_val[s_indx].item(),4)))
+        plt.xlabel(str(round(start_val[s_indx],4))+' <-- '+str(round(arg_max_hist_value[s_indx],4))+' --> '+str(round(end_val[s_indx],4)))
 
 
     fig.set_tight_layout(True)

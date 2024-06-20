@@ -44,7 +44,9 @@ def make_batch_dsprites_random_reward_transitions(game, index, size, deepness=1,
             game.pi_to_action(pi0[i], index, repeats=repeats)
         pi_one_hot[i,pi0[i]] = 1.0
         o1[i] = game.current_frame(index)
-    return o0, o1, pi_one_hot
+    return torch.Tensor(o0).permute(0,3,1,2),\
+          torch.Tensor(o1).permute(0,3,1,2), \
+            torch.Tensor(pi_one_hot)
 
 def softmax_multi_with_log(x, single_values=4, eps=1e-20, temperature=10.0):
     """Compute softmax values for each sets of scores in x."""
@@ -55,16 +57,16 @@ def softmax_multi_with_log(x, single_values=4, eps=1e-20, temperature=10.0):
     logSM = x - torch.log(e_x.sum(axis=1).reshape(-1,1) + eps) # to avoid infs
     return SM, logSM
 
-def make_batch_dsprites_active_inference(games, model, deepness=10, samples=5, calc_mean=False, repeats=1):
+def make_batch_dsprites_active_inference(games, model, deepness=10, samples=5, calc_mean=False, repeats=1, device='cpu'):
     o0 = games.current_frame_all()
     o0_repeated = torch.Tensor(o0.repeat(4,0)) # The 0th dimension
-    o0 = torch.Tensor(o0).permute(0,3,1,2)
-    o0_repeated = o0_repeated.permute(0,3,1,2)
+    o0 = torch.Tensor(o0).permute(0,3,1,2).to(device)
+    o0_repeated = o0_repeated.permute(0,3,1,2).to(device)
 
     pi_one_hot = torch.eye(4)
-    pi_repeated = torch.tile(pi_one_hot,(games.games_no, 1))
+    pi_repeated = torch.tile(pi_one_hot,(games.games_no, 1)).to(device)
 
-    sum_G, sum_terms, po2 = model.calculate_G_repeated(o0_repeated, torch.Tensor(pi_repeated), steps=deepness, samples=samples, calc_mean=calc_mean)
+    sum_G, sum_terms, po2 = model.calculate_G_repeated(o0_repeated, pi_repeated, steps=deepness, samples=samples, calc_mean=calc_mean)
     terms1 = -sum_terms[0]
     terms12 = -sum_terms[0]+sum_terms[1]
     # Shape now is (games_no,4)

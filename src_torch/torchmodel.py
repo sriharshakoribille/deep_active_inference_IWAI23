@@ -26,7 +26,7 @@ class ModelTop(nn.Module):
         logits_pi = self.qpi_net(s0)
         q_pi = F.softmax(logits_pi, dim=1)
         log_q_pi = torch.log(q_pi+1e-20)
-        return logits_pi, q_pi, log_q_pi
+        return logits_pi.cpu(), q_pi.cpu(), log_q_pi.cpu()
 
 class ModelMid(nn.Module):
     def __init__(self, s_dim, pi_dim):
@@ -54,12 +54,12 @@ class ModelMid(nn.Module):
 
     def transition(self, pi, s0):
         mean, logvar = torch.split(self.ps_net(torch.cat([pi,s0],1)), self.s_dim, dim=1)
-        return mean, logvar
+        return mean.cpu(), logvar.cpu()
 
     def transition_with_sample(self, pi, s0):
         ps1_mean, ps1_logvar = self.transition(pi, s0)
         ps1 = self.reparameterize(ps1_mean, ps1_logvar)
-        return ps1, ps1_mean, ps1_logvar
+        return ps1.cpu(), ps1_mean.cpu(), ps1_logvar.cpu()
     
     # TODO: Write appropriate forward() function for this class
     
@@ -131,27 +131,28 @@ class ModelDown(nn.Module):
 
     def encoder(self, o):
         mean_s, logvar_s = torch.split(self.qs_net(o), self.s_dim, dim=1)
-        return mean_s, logvar_s
+        return mean_s.cpu(), logvar_s.cpu()
     
     def decoder(self, s):
         po = self.po_net(s)
-        return po
+        return po.cpu()
     
     def encoder_with_sample(self, o):
         mean, logvar = self.encoder(o)
         s = self.reparameterize(mean, logvar)
-        return s, mean, logvar
+        return s.cpu(), mean.cpu(), logvar.cpu()
     
 class ActiveInferenceModel:
-    def __init__(self, s_dim, pi_dim, gamma, beta_s, beta_o, colour_channels=1, resolution=64):
+    def __init__(self, s_dim, pi_dim, gamma, beta_s, beta_o, colour_channels=1, resolution=64, device='cpu'):
 
         self.s_dim = s_dim
         self.pi_dim = pi_dim
+        self.device = device
 
         if self.pi_dim > 0:
-            self.model_top = ModelTop(s_dim, pi_dim)
-            self.model_mid = ModelMid(s_dim, pi_dim)
-        self.model_down = ModelDown(s_dim, pi_dim, colour_channels, resolution)
+            self.model_top = ModelTop(s_dim, pi_dim).to(device)
+            self.model_mid = ModelMid(s_dim, pi_dim).to(device)
+        self.model_down = ModelDown(s_dim, pi_dim, colour_channels, resolution).to(device)
 
         self.model_down.beta_s = nn.Parameter(torch.tensor(beta_s, dtype=torch.float32), requires_grad=False)
         self.model_down.gamma = nn.Parameter(torch.tensor(gamma, dtype=torch.float32), requires_grad=False)
@@ -159,41 +160,45 @@ class ActiveInferenceModel:
         self.pi_one_hot = nn.Parameter(torch.eye(4, dtype=torch.float32), requires_grad=False)
         self.pi_one_hot_3 = nn.Parameter(torch.eye(3, dtype=torch.float32), requires_grad=False)
 
-    # def save_weights(self, folder_chp):
-    #     self.model_down.qs_net.save_weights(folder_chp+'/checkpoint_qs')
-    #     self.model_down.po_net.save_weights(folder_chp+'/checkpoint_po')
-    #     if self.pi_dim > 0:
-    #         self.model_top.qpi_net.save_weights(folder_chp+'/checkpoint_qpi')
-    #         self.model_mid.ps_net.save_weights(folder_chp+'/checkpoint_ps')
+    def save_weights(self, folder_chp):
+        torch.save(self.model_down.qs_net.state_dict(), folder_chp + '/checkpoint_qs')
+        torch.save(self.model_down.po_net.state_dict(), folder_chp + '/checkpoint_po')
+        if self.pi_dim > 0:
+            torch.save(self.model_top.qpi_net.state_dict(), folder_chp + '/checkpoint_qpi')
+            torch.save(self.model_mid.ps_net.state_dict(), folder_chp + '/checkpoint_ps')
 
-    # def load_weights(self, folder_chp):
-    #     self.model_down.qs_net.load_weights(folder_chp+'/checkpoint_qs')
-    #     self.model_down.po_net.load_weights(folder_chp+'/checkpoint_po')
-    #     if self.pi_dim > 0:
-    #         self.model_top.qpi_net.load_weights(folder_chp+'/checkpoint_qpi')
-    #         self.model_mid.ps_net.load_weights(folder_chp+'/checkpoint_ps')
+    def load_weights(self, folder_chp):
+        self.model_down.qs_net.load_state_dict(torch.load(folder_chp + '/checkpoint_qs'))
+        self.model_down.po_net.load_state_dict(torch.load(folder_chp + '/checkpoint_po'))
+        if self.pi_dim > 0:
+            self.model_top.qpi_net.load_state_dict(torch.load(folder_chp + '/checkpoint_qpi'))
+            self.model_mid.ps_net.load_state_dict(torch.load(folder_chp + '/checkpoint_ps'))
 
-    # def save_all(self, folder_chp, stats, script_file="", optimizers={}):
-    #     self.save_weights(folder_chp)
-    #     with open(folder_chp+'/stats.pkl','wb') as ff:  pickle.dump(stats,ff)
-    #     checkpoint = tf.train.Checkpoint(optim=optimizers)
-    #     checkpoint.save(folder_chp)
-    #     copyfile('src/tfmodel.py', folder_chp+'/tfmodel.py')
-    #     copyfile('src/tfloss.py', folder_chp+'/tfloss.py')
+    def save_all(self, folder_chp, stats, script_file="", optimizers={}):
+        self.save_weights(folder_chp)
+        with open(folder_chp + '/stats.pkl', 'wb') as ff:
+            pickle.dump(stats, ff)
+        checkpoint = {
+            'optim': optimizers
+        }
+        torch.save(checkpoint, folder_chp + '/checkpoint')
         
-    # def load_all(self, folder_chp):
-    #     self.load_weights(folder_chp)
-    #     with open(folder_chp+'/stats.pkl','rb') as ff:
-    #         stats = pickle.load(ff)
-    #     try:
-    #       checkpoint = tf.train.Checkpoint()
-    #       checkpoint.restore(tf.train.latest_checkpoint(folder_chp))
-    #     except:
-    #         optimizers = {}
-    #     if len(stats['var_beta_s'])>0: self.model_down.beta_s.assign(stats['var_beta_s'][-1])
-    #     if len(stats['var_gamma'])>0: self.model_down.gamma.assign(stats['var_gamma'][-1])
-    #     if len(stats['var_beta_o'])>0: self.model_down.beta_o.assign(stats['var_beta_o'][-1])
-    #     return stats, optimizers
+    def load_all(self, folder_chp):
+        self.load_weights(folder_chp)
+        with open(folder_chp + '/stats.pkl', 'rb') as ff:
+            stats = pickle.load(ff)
+        try:
+            checkpoint = torch.load(folder_chp + '/checkpoint')
+            optimizers = checkpoint['optim']
+        except:
+            optimizers = {}
+        if len(stats['var_beta_s']) > 0:
+            self.model_down.beta_s.data = torch.tensor(stats['var_beta_s'][-1], dtype=torch.float32)
+        if len(stats['var_gamma']) > 0:
+            self.model_down.gamma.data = torch.tensor(stats['var_gamma'][-1], dtype=torch.float32)
+        if len(stats['var_beta_o']) > 0:
+            self.model_down.beta_o.data = torch.tensor(stats['var_beta_o'][-1], dtype=torch.float32)
+        return stats, optimizers
 
     def check_reward(self, o):
         if self.model_down.resolution == 64:
@@ -201,10 +206,10 @@ class ActiveInferenceModel:
         elif self.model_down.resolution == 32:
             print('Not implemented yet for resolution 32..')
 
-    def imagine_future_from_o(self, o0, pi):
-        s0, _, _ = self.model_down.encoder_with_sample(o0)
-        ps1, _, _ = self.model_mid.transition_with_sample(pi, s0)
-        po1 = self.model_down.decoder(ps1)
+    def imagine_future_from_o(self, o0, pi, device='cpu'):
+        s0, _, _ = self.model_down.encoder_with_sample(o0.to(device))
+        ps1, _, _ = self.model_mid.transition_with_sample(pi.to(device), s0.to(device))
+        po1 = self.model_down.decoder(ps1.to(device))
         return po1
 
     def habitual_net(self, o):
@@ -218,7 +223,7 @@ class ActiveInferenceModel:
         one of the four actions continuously..
         """
         # Calculate current s_t
-        qs0_mean, qs0_logvar = self.model_down.encoder(o)
+        qs0_mean, qs0_logvar = self.model_down.encoder(o.to(self.device))
         qs0 = self.model_down.reparameterize(qs0_mean, qs0_logvar)
 
         sum_terms = [torch.zeros([o.shape[0]])]*3   # Not sure of the syntax here. Also check for the correct dtype
@@ -283,9 +288,9 @@ class ActiveInferenceModel:
         term1 = torch.zeros([s0.shape[0]])
         
         for _ in range(samples):
-            ps1, ps1_mean, ps1_logvar = self.model_mid.transition_with_sample(pi0, s0)
-            po1 = self.model_down.decoder(ps1)
-            qs1, _, qs1_logvar = self.model_down.encoder_with_sample(po1)
+            ps1, ps1_mean, ps1_logvar = self.model_mid.transition_with_sample(pi0.to(self.device), s0.to(self.device))
+            po1 = self.model_down.decoder(ps1.to(self.device))
+            qs1, _, qs1_logvar = self.model_down.encoder_with_sample(po1.to(self.device))
 
             # E [ log P(o|pi) ]
             logpo1 = self.check_reward(po1)
@@ -301,11 +306,11 @@ class ActiveInferenceModel:
         term2_2 = torch.zeros([s0.shape[0]])
         for _ in range(samples):
             # Term 2.1: Sampling different thetas, i.e. sampling different ps_mean/logvar with dropout!
-            po1_temp1 = self.model_down.decoder(self.model_mid.transition_with_sample(pi0, s0)[0])
+            po1_temp1 = self.model_down.decoder(self.model_mid.transition_with_sample(pi0.to(self.device), s0.to(self.device))[0].to(self.device))
             term2_1 += torch.sum(entropy_bernoulli(po1_temp1),dim=[1,2,3])
 
             # Term 2.2: Sampling different s with the same theta, i.e. just the reparametrization trick!
-            po1_temp2 = self.model_down.decoder(self.model_down.reparameterize(ps1_mean, ps1_logvar))
+            po1_temp2 = self.model_down.decoder(self.model_down.reparameterize(ps1_mean.to(self.device), ps1_logvar.to(self.device)).to(self.device))
             term2_2 += torch.sum(entropy_bernoulli(po1_temp2),dim=[1,2,3])            
         term2_1 /= float(samples)
         term2_2 /= float(samples)
@@ -319,9 +324,9 @@ class ActiveInferenceModel:
 
     def calculate_G_mean(self, s0, pi0):
 
-        _, ps1_mean, ps1_logvar = self.model_mid.transition_with_sample(pi0, s0)
-        po1 = self.model_down.decoder(ps1_mean)
-        _, qs1_mean, qs1_logvar = self.model_down.encoder_with_sample(po1)
+        _, ps1_mean, ps1_logvar = self.model_mid.transition_with_sample(pi0.to(self.device), s0.to(self.device))
+        po1 = self.model_down.decoder(ps1_mean.to(self.device))
+        _, qs1_mean, qs1_logvar = self.model_down.encoder_with_sample(po1.to(self.device))
 
         # E [ log P(o|pi) ]
         logpo1 = self.check_reward(po1)
@@ -331,11 +336,11 @@ class ActiveInferenceModel:
         term1 = - torch.sum(entropy_normal_from_logvar(ps1_logvar) + entropy_normal_from_logvar(qs1_logvar), dim=1)        
 
         # Term 2.1: Sampling different thetas, i.e. sampling different ps_mean/logvar with dropout!
-        po1_temp1 = self.model_down.decoder(self.model_mid.transition_with_sample(pi0, s0)[1])
+        po1_temp1 = self.model_down.decoder(self.model_mid.transition_with_sample(pi0.to(self.device), s0.to(self.device))[1].to(self.device))
         term2_1 = torch.sum(entropy_bernoulli(po1_temp1),dim=[1,2,3])
 
         # Term 2.2: Sampling different s with the same theta, i.e. just the reparametrization trick!
-        po1_temp2 = self.model_down.decoder(self.model_down.reparameterize(ps1_mean, ps1_logvar))
+        po1_temp2 = self.model_down.decoder(self.model_down.reparameterize(ps1_mean, ps1_logvar).to(self.device))
         term2_2 = torch.sum(entropy_bernoulli(po1_temp2),dim=[1,2,3])
 
         # E [ log [ H(o|s,th,pi) ] - E [ H(o|s,pi) ]
@@ -348,8 +353,8 @@ class ActiveInferenceModel:
     def calculate_G_given_trajectory(self, s0_traj, ps1_traj, ps1_mean_traj, ps1_logvar_traj, pi0_traj):
         # NOTE: len(s0_traj) = len(s1_traj) = len(pi0_traj)
 
-        po1 = self.model_down.decoder(ps1_traj)
-        qs1, _, qs1_logvar = self.model_down.encoder_with_sample(po1)
+        po1 = self.model_down.decoder(ps1_traj.to(self.device))
+        qs1, _, qs1_logvar = self.model_down.encoder_with_sample(po1.to(self.device))
 
         # E [ log P(o|pi) ]
         term0 = self.check_reward(po1)
@@ -358,11 +363,11 @@ class ActiveInferenceModel:
         term1 = - torch.sum(entropy_normal_from_logvar(ps1_logvar_traj) + entropy_normal_from_logvar(qs1_logvar), dim=1)
 
         #  Term 2.1: Sampling different thetas, i.e. sampling different ps_mean/logvar with dropout!
-        po1_temp1 = self.model_down.decoder(self.model_mid.transition_with_sample(pi0_traj, s0_traj)[0])
+        po1_temp1 = self.model_down.decoder(self.model_mid.transition_with_sample(pi0_traj.to(self.device), s0_traj.to(self.device))[0].to(self.device))
         term2_1 = torch.sum(entropy_bernoulli(po1_temp1),dim=[1,2,3])
 
         # Term 2.2: Sampling different s with the same theta, i.e. just the reparametrization trick!
-        po1_temp2 = self.model_down.decoder(self.model_down.reparameterize(ps1_mean_traj, ps1_logvar_traj))
+        po1_temp2 = self.model_down.decoder(self.model_down.reparameterize(ps1_mean_traj, ps1_logvar_traj).to(self.device))
         term2_2 = torch.sum(entropy_bernoulli(po1_temp2),dim=[1,2,3])        
 
         # E [ log [ H(o|s,th,pi) ] - E [ H(o|s,pi) ]
