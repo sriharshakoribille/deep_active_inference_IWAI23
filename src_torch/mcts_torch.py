@@ -5,7 +5,8 @@ from src_torch.torchmodel import ActiveInferenceModel
 
 NODE_ID = 0
 class Node:
-    def __init__(self, s, model, C, pi_dim=4, verbose=False, using_prior_for_exploration=False):
+    def __init__(self, s, model:ActiveInferenceModel, C, pi_dim=4, verbose=False, 
+                 using_prior_for_exploration=False, device='cpu'):
         global NODE_ID
 
         # The latent state that corresponds to this node!
@@ -73,10 +74,10 @@ class Node:
             exit('Errr: '+str(self.pi_dim))
 
         if use_means:
-            G, _, ps_next_mean, _ = self.model.calculate_G_mean(self.s, PI_HOT)
+            G, _, ps_next_mean, _ = self.model.calculate_G_mean(torch.Tensor(self.s), PI_HOT)
             ps_next = ps_next_mean
         else:
-            G, _, ps_next, _, _ = self.model.calculate_G(self.s, PI_HOT, samples=samples)
+            G, _, ps_next, _, _ = self.model.calculate_G(torch.Tensor(self.s), PI_HOT, samples=samples)
         self.W -= G.numpy() # Note: Negative expected free energy to be used as a Q value in RL applications.
         self.N += 1.0
         for i in range(self.pi_dim):
@@ -150,7 +151,7 @@ class MCTS_Params:
         self.method = 'ai'
         self.using_prior_for_exploration = False
 
-def active_inference_mcts(model, frame, params, o_shape=(64,64,1)):
+def active_inference_mcts(model:ActiveInferenceModel, frame, params, o_shape=(1,64,64), device='cpu'):
     states_explored = 0
     all_paths = [] # For debugging.
     all_paths_G = [] # For debugging.
@@ -158,13 +159,14 @@ def active_inference_mcts(model, frame, params, o_shape=(64,64,1)):
         return [0], 0, states_explored, all_paths, all_paths_G
 
     # Calculate current s_t
-    qs0_mean, qs0_logvar = model.model_down.encoder(frame.reshape(1,o_shape[0],o_shape[1],o_shape[2]))
+    qs0_mean, qs0_logvar = model.model_down.encoder(torch.Tensor(frame.reshape(1,o_shape[0],o_shape[1],o_shape[2])).to(device))
 
     # Important to be the mean here as we repeat it model.pi_dim times!
-    root = Node(s=qs0_mean[0], model=model, C=params.C, pi_dim=model.pi_dim, using_prior_for_exploration=params.using_prior_for_exploration)
+    root = Node(s=qs0_mean[0].numpy(), model=model, C=params.C, pi_dim=model.pi_dim, 
+                using_prior_for_exploration=params.using_prior_for_exploration, device=device)
 
     # Habit.
-    root.Qpi = model.model_top.encode_s(qs0_mean)[1].numpy()[0]
+    root.Qpi = model.model_top(qs0_mean.to(device))[1].numpy()[0]
 
     if params.use_habit:
         if calc_threshold(root.Qpi, axis=0) > params.threshold:
@@ -188,7 +190,7 @@ def active_inference_mcts(model, frame, params, o_shape=(64,64,1)):
         all_av_G = np.zeros(params.simulation_repeats)
         for sim_repeat in range(params.simulation_repeats):
             states_explored += params.simulation_depth
-            all_av_G[sim_repeat], pi0, path[-1].Qpi = model.mcts_step_simulate(path[-1].s[0], params.simulation_depth, use_means=False)
+            all_av_G[sim_repeat], pi0, path[-1].Qpi = model.mcts_step_simulate(path[-1].s[0], params.simulation_depth, use_means=False, device=device)
         path[-1].backpropagate([root] + path[:-1], all_av_G.mean())
         all_paths.append(actions_path)
         all_paths_G.append(all_av_G.mean())

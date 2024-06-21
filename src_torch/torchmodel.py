@@ -375,43 +375,43 @@ class ActiveInferenceModel:
 
         return - term0 + term1 + term2
 
-    def mcts_step_simulate(self, starting_s, depth, use_means=False):
+    def mcts_step_simulate(self, starting_s, depth, use_means=False, device='cpu'):
         s0 = torch.zeros([depth, self.s_dim], dtype=torch.float32)
         ps1 = torch.zeros([depth, self.s_dim], dtype=torch.float32)
         ps1_mean = torch.zeros([depth, self.s_dim], dtype=torch.float32)
         ps1_logvar = torch.zeros([depth, self.s_dim], dtype=torch.float32)
         pi0 = torch.zeros([depth, self.pi_dim], dtype=torch.float32)
 
-        s0[0] = starting_s
+        s0[0] = torch.Tensor(starting_s)
         try:
-            Qpi_t_to_return = self.model_top(s0[0].reshape(1,-1))[1][0].detach().cpu().numpy()
+            Qpi_t_to_return = self.model_top(s0[0].reshape(1,-1).to(device))[1][0].detach().cpu().numpy()
             pi0[0, np.random.choice(self.pi_dim, p=Qpi_t_to_return)] = 1.0
         except:
             pi0[0, 0] = 1.0
             Qpi_t_to_return = pi0[0]
-        ps1_new, ps1_mean_new, ps1_logvar_new = self.model_mid.transition_with_sample(pi0[0].reshape(1,-1), s0[0].reshape(1,-1))
-        ps1[0] = ps1_new[0].detach().numpy()
-        ps1_mean[0] = ps1_mean_new[0].detach().numpy()
-        ps1_logvar[0] = ps1_logvar_new[0].detach().numpy()
+        ps1_new, ps1_mean_new, ps1_logvar_new = self.model_mid.transition_with_sample(pi0[0].reshape(1,-1).to(device), s0[0].reshape(1,-1).to(device))
+        ps1[0] = ps1_new[0]
+        ps1_mean[0] = ps1_mean_new[0]
+        ps1_logvar[0] = ps1_logvar_new[0]
         if 1 < depth:
             if use_means:
-                s0[1] = ps1_mean_new[0].detach().numpy()
+                s0[1] = ps1_mean_new[0]
             else:
-                s0[1] = ps1_new[0].detach().numpy()
+                s0[1] = ps1_new[0]
         for t in range(1, depth):
             try:
-                pi0[t, np.random.choice(self.pi_dim, p=self.model_top.encode_s(s0[t].reshape(1,-1))[1].detach().numpy()[0])] = 1.0
+                pi0[t, np.random.choice(self.pi_dim, p=self.model_top.encode_s(s0[t].reshape(1,-1).to(device))[1].numpy()[0])] = 1.0
             except:
                 pi0[t, 0] = 1.0
-            ps1_new, ps1_mean_new, ps1_logvar_new = self.model_mid.transition_with_sample(pi0[t].reshape(1,-1), s0[t].reshape(1,-1))
-            ps1[t] = ps1_new[0].detach().numpy()
-            ps1_mean[t] = ps1_mean_new[0].detach().numpy()
-            ps1_logvar[t] = ps1_logvar_new[0].detach().numpy()
+            ps1_new, ps1_mean_new, ps1_logvar_new = self.model_mid.transition_with_sample(pi0[t].reshape(1,-1).to(device), s0[t].reshape(1,-1).to(device))
+            ps1[t] = ps1_new[0]
+            ps1_mean[t] = ps1_mean_new[0]
+            ps1_logvar[t] = ps1_logvar_new[0]
             if t+1 < depth:
                 if use_means:
-                    s0[t+1] = ps1_mean_new[0].detach().numpy()
+                    s0[t+1] = ps1_mean_new[0]
                 else:
-                    s0[t+1] = ps1_new[0].detach().numpy()
+                    s0[t+1] = ps1_new[0]
 
-        G = torch.mean(self.calculate_G_given_trajectory(s0, ps1, ps1_mean, ps1_logvar, pi0)).detach().numpy()
+        G = torch.mean(self.calculate_G_given_trajectory(s0, ps1, ps1_mean, ps1_logvar, pi0)).numpy()
         return G, pi0, Qpi_t_to_return
